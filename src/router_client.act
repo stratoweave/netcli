@@ -7,7 +7,7 @@ import ssh
 
 import drivers
 
-actor Client(pcap: process.ProcessCap,
+actor Client(pcap: ?process.ProcessCap,
              address: str,
              username: str,
              password: ?str = None,
@@ -23,7 +23,8 @@ actor Client(pcap: process.ProcessCap,
     Provides a clean interface for connecting to routers and executing commands.
 
     Args:
-        pcap: process.ProcessCap for SSH process creation
+        pcap: process.ProcessCap for SSH process creation; optional when
+              transport_pipe is supplied
         address: Router IP address or hostname
         username: SSH username
         password: Password for authentication
@@ -188,9 +189,12 @@ actor Client(pcap: process.ProcessCap,
     if transport_pipe is not None:
         transport_pipe.read_cb(_on_pipe_event)
     else:
+        proc_cap = pcap
+        if proc_cap is None:
+            raise ValueError("process capability is required for SSH transport")
         _log.debug("Starting SSH connection", {"address": address, "port": actual_port})
         ssh.SSHClient(
-            pcap,
+            proc_cap!,
             address=address,
             port=actual_port,
             username=username,
