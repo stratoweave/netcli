@@ -12,9 +12,9 @@ jobs:
         with:
           channel: 'tip'
       - name: "Check out repository code"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: "Cache acton stuff"
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/acton
@@ -23,7 +23,7 @@ jobs:
       - run: acton build
       - run: acton test
       - run: acton test perf
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: router_example
           path: out/bin/router_example*
@@ -47,14 +47,14 @@ jobs:
           sudo apt-get install -qy linux-modules-extra-$(uname -r)
           sudo modprobe mpls_router mpls_gso vrf
       - name: "Check out repository code"
-        uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+        uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: router_example
           path: out/bin/
       - run: chmod a+x out/bin/router_example*
       - name: "Check out licenses repo"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/licenses
           path: licenses
@@ -76,7 +76,7 @@ jobs:
       - run: |
           make -C test/${{ matrix.TESTENV }} save-logs
         if: ${{ always() }}
-      - uses : actions/upload-artifact@v4
+      - uses : actions/upload-artifact@v7
         with:
           name: logs-${{ matrix.TESTENV }}
           path: |
