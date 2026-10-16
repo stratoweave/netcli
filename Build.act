@@ -5,6 +5,11 @@ dependencies = {
         repo_url="https://github.com/actonlang/pipe.git",
         url="https://github.com/actonlang/pipe/archive/21a42ed57263c1d5c10ea733b03ae731b9efabd1.zip",
         hash="N-V-__8AALYVAAAUvHQ_330h64Ozha0xuWXXabLGLRJgVxkm"
+    ),
+    "ssh": (
+        repo_url="https://github.com/actonlang/acton-ssh",
+        url="https://github.com/actonlang/acton-ssh/archive/dc03dd30e13f695b6a9676ad60da6476a4d8db89.zip",
+        hash="N-V-__8AAPA_BgDbmX5Oz8o8g4yvN_STEBdJGeuLXTgf5Ors"
     )
 }
 zig_dependencies = {}

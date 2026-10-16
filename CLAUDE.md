@@ -25,25 +25,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is the netcli package - a CLI client library system built on Acton with the following architecture:
 
 - **Build system**: Uses Zig build system (`build.zig`) for compiling generated C code from Acton
-- **Dependencies**: Acton base libraries and ActonDB (configured in `build.zig.zon`)
+- **Dependencies**: `pipe` and `ssh` (acton-ssh) packages, declared in `Build.act`
 
 ## Code Architecture
 
 The project provides CLI client libraries for network device management:
-
-### SSH Client Library (`src/ssh.act`)
-- Generic SSH client actor with sshpass support
-- Multiple authentication methods: password, SSH key, or none
-- Configurable connection options (timeout, host key checking, subsystems)
-- Callback-based interface for async operations
-- Used as foundation for higher-level clients
 
 ### Router Client Library (`src/router_client.act`)
 - State machine-based router CLI client for modern platforms
 - Platform-agnostic interface supporting Juniper cRPD and Cisco IOS XRd
 - Transaction management with commit/rollback support
 - Generic string command execution
-- Built on SSH client library
+- Talks to the device over a `pipe.Pipe`: an acton-ssh `ssh.pipe.SshPipe` that
+  requests an interactive shell with a PTY, or `transport_pipe` for in-process
+  tests against `MockCliServer`
 
 ### Router Driver System (`src/drivers.act`)
 - **Formal State Machine Architecture**: Implements a complete state machine for router device interactions

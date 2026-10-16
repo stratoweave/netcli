@@ -66,7 +66,7 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
         _fail_once(ValueError("Timed out waiting for mock CLI canned response"))
 
     client = router_client.Client(
-        process=t.env.process,
+        connect_cap=None,
         address="actor-pipe",
         username="actor-pipe",
         device_type=drivers.DEVICE_TYPE_JUNIPER,
@@ -139,7 +139,7 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
         _fail_once(ValueError("Timed out waiting for mock CLI callback response"))
 
     client = router_client.Client(
-        process=t.env.process,
+        connect_cap=None,
         address="actor-pipe",
         username="actor-pipe",
         device_type=drivers.DEVICE_TYPE_JUNIPER,

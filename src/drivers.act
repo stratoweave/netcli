@@ -2,7 +2,6 @@
 
 import logging
 import pipe
-import ssh
 import re
 import testing
 import time
@@ -11,17 +10,6 @@ import time
 class SSHClientWrapper(object):
     """Base wrapper interface for SSH client operations"""
     send_str: proc(data: str) -> bool
-
-class ProductionSSHWrapper(SSHClientWrapper):
-    """Production wrapper that delegates to real SSH client"""
-    _ssh_client: ssh.SSHClient
-
-    def __init__(self, ssh_client: ssh.SSHClient):
-        self._ssh_client = ssh_client
-
-    def send_str(self, data: str) -> bool:
-        """Send string data via SSH client"""
-        return self._ssh_client.send_str(data)
 
 class PipeWrapper(SSHClientWrapper):
     """Wrapper that sends CLI bytes over a Pipe transport"""
@@ -449,15 +437,12 @@ class BaseDriver(Driver):
         """Get device-specific rollback commands - must be implemented by subclasses"""
         raise NotImplementedError("_get_rollback_commands must be implemented by subclasses")
 
-def auto_detect(ssh_client: ssh.SSHClient) -> str:
+def auto_detect() -> str:
     """
     Auto-detect device type based on SSH banner and initial prompts
 
     This is a simplified detection that would need to be enhanced
     for production use. Currently returns unknown for all devices.
-
-    Args:
-        ssh_client: Established SSH connection
 
     Returns:
         Device type string

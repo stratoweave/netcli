@@ -9,8 +9,7 @@ This package provides the CLI client libraries needed for the conversion system:
 
 ### Core Libraries
 
-- **SSH Client (`src/ssh.act`)** - Generic SSH client actor with multiple authentication methods
-- **Router Client (`src/router_client.act`)** - Platform-agnostic router CLI client with transaction support
+- **Router Client (`src/router_client.act`)** - Platform-agnostic router CLI client with transaction support, connecting over SSH with [acton-ssh](https://github.com/actonlang/acton-ssh)
 - **Router Drivers (`src/drivers.act`)** - Formal state machine architecture for device-specific operations
 - **Mock CLI Server (`src/mock_cli.act`)** - In-process CLI server for tests using the shared pipe package
 
