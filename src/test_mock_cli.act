@@ -1,7 +1,6 @@
 """Mock CLI server integration tests."""
 
 import pipe
-import process
 import testing
 
 import drivers
@@ -67,7 +66,7 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
         _fail_once(ValueError("Timed out waiting for mock CLI canned response"))
 
     client = router_client.Client(
-        pcap=process.ProcessCap(t.env.auth),
+        process=t.env.process,
         address="actor-pipe",
         username="actor-pipe",
         device_type=drivers.DEVICE_TYPE_JUNIPER,
@@ -140,7 +139,7 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
         _fail_once(ValueError("Timed out waiting for mock CLI callback response"))
 
     client = router_client.Client(
-        pcap=process.ProcessCap(t.env.auth),
+        process=t.env.process,
         address="actor-pipe",
         username="actor-pipe",
         device_type=drivers.DEVICE_TYPE_JUNIPER,
