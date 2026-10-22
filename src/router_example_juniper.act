@@ -1,11 +1,10 @@
 import argparse
 import logging
-import process
 
 import router_client
 
 
-actor Example(pcap, on_done, username: str, password: str, address: str, port: int):
+actor Example(process, on_done, username: str, password: str, address: str, port: int):
     """Example demonstrating simplified router client usage"""
 
     # Create logging handler
@@ -38,7 +37,7 @@ actor Example(pcap, on_done, username: str, password: str, address: str, port: i
 
         # Create client with provided parameters
         client = router_client.Client(
-            pcap=pcap,
+            process=process,
             address=address,
             port=port,
             username=username,
@@ -197,7 +196,7 @@ actor main(env):
         address = args.get_str("address")
         port = args.get_int("port")
 
-        Example(process.ProcessCap(env.cap), done, username, password, address, port)
+        Example(env.process, done, username, password, address, port)
     except argparse.PrintUsage as exc:
         print(exc.error_message)
         env.exit(0)
