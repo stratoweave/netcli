@@ -39,6 +39,16 @@ The project provides CLI client libraries for network device management:
 - Talks to the device over a `pipe.Pipe`: an acton-ssh `ssh.pipe.SshPipe` that
   requests an interactive shell with a PTY, or `transport_pipe` for in-process
   tests against `MockCliServer`
+- Follows the pipe pattern of stratoweave's `netconf.Client`: the driver starts
+  on the pipe's connected signal `read_cb(None, None)`, and `on_connect(client,
+  err)` reports the driver ready (`err` is None), a failed connection or a pipe
+  error later. A pipe error, `disconnect()` or `connect_timeout` (the time
+  until the driver is ready) closes the pipe, fails the pending operations and
+  moves the driver to DISCONNECTED.
+- `skip_host_key_check=True` accepts any SSH host key, as for devices that come
+  up with new host keys. Without it, only a host key that is not in
+  known_hosts is accepted, but Client passes no known_hosts yet, so every host
+  key is accepted either way.
 
 ### Router Driver System (`src/drivers.act`)
 - **Formal State Machine Architecture**: Implements a complete state machine for router device interactions
@@ -79,7 +89,7 @@ Valid state transitions:
 ```
 
 **Driver States**:
-- `INITIALIZING`: Driver startup and initialization
+- `INITIALIZING`: Waits for the first prompt, then sends the initialization commands one at a time, each after the prompt of the one before
 - `READY`: Ready for commands or configuration operations
 - `EXECUTING_COMMAND`: Processing a single command
 - `ENTERING_CONFIG`: Transitioning to configuration mode

@@ -13,9 +13,12 @@ actor Client(connect_cap: ?net.TCPConnectCap,
              username: str,
              password: ?str = None,
              private_keys: ?list[ssh.PrivateKey] = None,
+             on_connect: action(Client, ?Exception) -> None,
              protocol_: str = "ssh",
              port: int = 22,
              device_type: ?str = None,
+             skip_host_key_check: bool = False,
+             connect_timeout: float = 30.0,
              log_handler: ?logging.Handler = None,
              transport_pipe: ?pipe.Pipe = None):
     """
@@ -30,9 +33,18 @@ actor Client(connect_cap: ?net.TCPConnectCap,
         username: SSH username
         password: Password for authentication
         private_keys: In-memory private keys for public key authentication
+        on_connect: Called with None once the driver is ready for commands,
+                    or with the error when connecting fails or the connection
+                    is lost later
         protocol_: Connection protocol ("ssh" or "telnet", only ssh supported currently)
         port: Connection port (default: 22 for SSH, 23 for telnet)
         device_type: Device type override (e.g., "juniper_junos", "cisco_iosxr")
+        skip_host_key_check: Accept any SSH host key. Otherwise only a host
+                             key that is not in known_hosts is accepted, but
+                             Client passes no known_hosts yet, so every host
+                             key is accepted either way.
+        connect_timeout: Seconds from the start until the driver is ready, after
+                         which on_connect reports a timeout
         log_handler: Optional logging handler
         transport_pipe: Optional byte-stream pipe for in-process testing
     """
@@ -42,8 +54,10 @@ actor Client(connect_cap: ?net.TCPConnectCap,
 
     var _pipe: ?pipe.Pipe = transport_pipe
     var _driver: ?drivers.Driver = None
+    # True once on_connect has reported the driver ready
+    var _ready_reported = False
 
-    def _initialize_driver(ssh_wrapper: drivers.SSHClientWrapper, detected_type: ?str) -> None:
+    def _initialize_driver(p: pipe.Pipe, detected_type: ?str) -> None:
         # Auto-detect device type if not specified
         selected_type = device_type
         if selected_type is None:
@@ -52,27 +66,54 @@ actor Client(connect_cap: ?net.TCPConnectCap,
         # Create appropriate driver
         if selected_type is not None and selected_type != drivers.DEVICE_TYPE_UNKNOWN:
             _log.info("Using device type", {"device_type": selected_type})
-            _driver = drivers.create_driver(selected_type, ssh_wrapper, _log)
+            _driver = drivers.create_driver(selected_type, p, _log)
         else:
             _log.error("Failed to detect device type or unsupported device", {"detected_type": selected_type if selected_type is not None else "None"})
         if _driver is not None:
             _driver.initialize()
+        else:
+            # Without a driver nothing can use the connection
+            disconnect()
+            on_connect(self, ValueError("Unsupported device type: " + (selected_type if selected_type is not None else "None")))
 
     def _on_pipe_event(err: ?Exception, data: ?bytes) -> None:
         if data is not None:
-            # The first data (banner or prompt) means the device CLI is up
-            p = _pipe
-            if _driver is None and p is not None:
-                _initialize_driver(drivers.PipeWrapper(p), drivers.auto_detect())
             if _driver is not None:
                 _driver.handle_data(data)
+                if not _ready_reported and _driver.is_ready():
+                    # The driver has run its initialization commands
+                    _ready_reported = True
+                    on_connect(self, None)
             return
 
         if err is not None:
             _log.error("Pipe transport error", {"error": err})
+            # A pipe error ends the session
+            _close(err)
+            on_connect(self, err)
             return
 
         _log.info("Pipe transport connected")
+        p = _pipe
+        if p is not None:
+            _initialize_driver(p, drivers.auto_detect())
+
+    def _on_connect_timeout() -> None:
+        # A closed pipe has already been reported
+        if not _ready_reported and _pipe is not None:
+            _log.error("Timed out waiting for the device", {"connect_timeout": connect_timeout})
+            err = OSError("Timed out waiting for the device CLI")
+            _close(err)
+            on_connect(self, err)
+
+    def _close(error: Exception) -> None:
+        # A closed pipe reports nothing more, so fail the pending operations here
+        if _driver is not None:
+            _driver.handle_disconnect(error)
+        if _pipe is not None:
+            _pipe.close(None)
+        _pipe = None
+        _driver = None
 
     def is_connected() -> bool:
         """Check if client is connected and ready"""
@@ -139,10 +180,7 @@ actor Client(connect_cap: ?net.TCPConnectCap,
 
     def disconnect() -> None:
         """Disconnect from the device"""
-        if _pipe is not None:
-            _pipe.close(None)
-        _pipe = None
-        _driver = None
+        _close(Exception("Client disconnected"))
 
     def get_device_info() -> ?dict[str, str]:
         """Get device information"""
@@ -169,8 +207,7 @@ actor Client(connect_cap: ?net.TCPConnectCap,
         cap = connect_cap
         if cap is not None:
             _log.debug("Starting SSH connection", {"address": address, "port": actual_port})
-            # The device CLI needs an interactive shell with a PTY. There is no
-            # known_hosts data for devices, so any host key is accepted.
+            # The device CLI needs an interactive shell with a PTY
             _pipe = sshpipe.SshPipe(
                 cap,
                 address=address,
@@ -179,12 +216,13 @@ actor Client(connect_cap: ?net.TCPConnectCap,
                 password=password,
                 private_keys=private_keys,
                 shell=True,
-                host_key_check=sshpipe.HOST_KEY_CHECK_NONE,
-                connect_timeout=30.0,
+                host_key_check=sshpipe.HOST_KEY_CHECK_NONE if skip_host_key_check else sshpipe.HOST_KEY_CHECK_ACCEPT_NEW,
+                connect_timeout=connect_timeout,
                 log_handler=log_handler
             )
         else:
-            raise ValueError("TCP connect capability is required for SSH transport")
-    p = _pipe
-    if p is not None:
-        p.read_cb(_on_pipe_event)
+            on_connect(self, ValueError("TCP connect capability is required for SSH transport"))
+    if _pipe is not None:
+        _pipe.read_cb(_on_pipe_event)
+        # The timeout counts from here, not from the baseline of the message that created the client
+        after now connect_timeout: _on_connect_timeout()
