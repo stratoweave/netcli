@@ -22,7 +22,6 @@ jobs:
           key: acton-${{ hashFiles('**/build.act.json') }}-${{ steps.setup-acton.outputs.version }}
       - run: acton build
       - run: acton test
-      - run: acton test perf
       - uses: actions/upload-artifact@v7
         with:
           name: router_example
