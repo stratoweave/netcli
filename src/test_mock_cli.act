@@ -71,7 +71,7 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
         log_handler=log_handler,
         transport_pipe=pipes.client
     )
-    after 2.0: _on_timeout()
+    after now 2.0: _on_timeout()
 
 
 actor _test_mock_cli_callback_response(t: testing.EnvT):
@@ -141,7 +141,7 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
         log_handler=log_handler,
         transport_pipe=pipes.client
     )
-    after 2.0: _on_timeout()
+    after now 2.0: _on_timeout()
 
 
 actor _BrokenPipeEndpoint(break_on: str, prompt: bytes):
