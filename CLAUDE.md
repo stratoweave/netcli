@@ -25,25 +25,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is the netcli package - a CLI client library system built on Acton with the following architecture:
 
 - **Build system**: Uses Zig build system (`build.zig`) for compiling generated C code from Acton
-- **Dependencies**: Acton base libraries and ActonDB (configured in `build.zig.zon`)
+- **Dependencies**: `pipe` and `ssh` (acton-ssh) packages, declared in `Build.act`
 
 ## Code Architecture
 
 The project provides CLI client libraries for network device management:
-
-### SSH Client Library (`src/ssh.act`)
-- Generic SSH client actor with sshpass support
-- Multiple authentication methods: password, SSH key, or none
-- Configurable connection options (timeout, host key checking, subsystems)
-- Callback-based interface for async operations
-- Used as foundation for higher-level clients
 
 ### Router Client Library (`src/router_client.act`)
 - State machine-based router CLI client for modern platforms
 - Platform-agnostic interface supporting Juniper cRPD and Cisco IOS XRd
 - Transaction management with commit/rollback support
 - Generic string command execution
-- Built on SSH client library
+- Talks to the device over a `pipe.Pipe`: an acton-ssh `ssh.pipe.SshPipe` that
+  requests an interactive shell with a PTY, or `transport_pipe` for in-process
+  tests against `MockCliServer`
+- Follows the pipe pattern of stratoweave's `netconf.Client`: the driver starts
+  on the pipe's connected signal `read_cb(None, None)`, and `on_connect(client,
+  err)` reports the driver ready (`err` is None), a failed connection or a pipe
+  error later. A pipe error, `disconnect()` or `connect_timeout` (the time
+  until the driver is ready) closes the pipe, fails the pending operations and
+  moves the driver to DISCONNECTED.
+- `skip_host_key_check=True` accepts any SSH host key, as for devices that come
+  up with new host keys. Without it, only a host key that is not in
+  known_hosts is accepted, but Client passes no known_hosts yet, so every host
+  key is accepted either way.
 
 ### Router Driver System (`src/drivers.act`)
 - **Formal State Machine Architecture**: Implements a complete state machine for router device interactions
@@ -84,7 +89,7 @@ Valid state transitions:
 ```
 
 **Driver States**:
-- `INITIALIZING`: Driver startup and initialization
+- `INITIALIZING`: Waits for the first prompt, then sends the initialization commands one at a time, each after the prompt of the one before
 - `READY`: Ready for commands or configuration operations
 - `EXECUTING_COMMAND`: Processing a single command
 - `ENTERING_CONFIG`: Transitioning to configuration mode

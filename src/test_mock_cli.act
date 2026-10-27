@@ -35,14 +35,11 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
         done = True
         t.success()
 
-    def _run_command(attempt: int):
-        c = client
-        if c is not None and c.is_connected():
-            c.cmd(_on_command, "show version")
-        elif attempt < 10:
-            after 0.1: _run_command(attempt + 1)
-        else:
-            _fail_once(ValueError("Mock CLI client did not become ready"))
+    def _on_connect(c: router_client.Client, err: ?Exception):
+        if err is not None:
+            _fail_once(err)
+            return
+        c.cmd(_on_command, "show version")
 
     def _on_command(err: ?Exception, response: ?str):
         if err is not None:
@@ -66,15 +63,15 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
         _fail_once(ValueError("Timed out waiting for mock CLI canned response"))
 
     client = router_client.Client(
-        process=t.env.process,
+        connect_cap=None,
         address="actor-pipe",
         username="actor-pipe",
+        on_connect=_on_connect,
         device_type=drivers.DEVICE_TYPE_JUNIPER,
         log_handler=log_handler,
         transport_pipe=pipes.client
     )
-    after 0.1: _run_command(0)
-    after 2.0: _on_timeout()
+    after now 2.0: _on_timeout()
 
 
 actor _test_mock_cli_callback_response(t: testing.EnvT):
@@ -108,14 +105,11 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
         done = True
         t.success()
 
-    def _run_command(attempt: int):
-        c = client
-        if c is not None and c.is_connected():
-            c.cmd(_on_command, "show system uptime")
-        elif attempt < 10:
-            after 0.1: _run_command(attempt + 1)
-        else:
-            _fail_once(ValueError("Mock CLI client did not become ready"))
+    def _on_connect(c: router_client.Client, err: ?Exception):
+        if err is not None:
+            _fail_once(err)
+            return
+        c.cmd(_on_command, "show system uptime")
 
     def _on_command(err: ?Exception, response: ?str):
         if err is not None:
@@ -139,12 +133,152 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
         _fail_once(ValueError("Timed out waiting for mock CLI callback response"))
 
     client = router_client.Client(
-        process=t.env.process,
+        connect_cap=None,
         address="actor-pipe",
         username="actor-pipe",
+        on_connect=_on_connect,
         device_type=drivers.DEVICE_TYPE_JUNIPER,
         log_handler=log_handler,
         transport_pipe=pipes.client
     )
-    after 0.1: _run_command(0)
-    after 2.0: _on_timeout()
+    after now 2.0: _on_timeout()
+
+
+actor _BrokenPipeEndpoint(break_on: str, prompt: bytes):
+    """Pipe endpoint that answers each line with prompt, and reports a
+    transport error instead when break_on is written"""
+    var _read_cb: ?action(?Exception, ?bytes) -> None = None
+    var _closed = False
+
+    def read_cb(cb: action(?Exception, ?bytes) -> None):
+        _read_cb = cb
+        cb(None, None)
+        cb(None, prompt)
+
+    def write(data: bytes):
+        cb = _read_cb
+        if cb is not None:
+            if data.decode().strip() == break_on:
+                cb(OSError("connection lost"), None)
+            else:
+                cb(None, data + prompt)
+
+    def close(on_close: ?action() -> None):
+        _closed = True
+        if on_close is not None:
+            on_close()
+
+    def is_closed() -> bool:
+        return _closed
+
+
+class _BrokenPipe(pipe.Pipe):
+    _endpoint: _BrokenPipeEndpoint
+
+    def __init__(self, endpoint: _BrokenPipeEndpoint):
+        self._endpoint = endpoint
+
+    proc def write(self, data: bytes):
+        self._endpoint.write(data)
+
+    proc def read_cb(self, cb: action(?Exception, ?bytes) -> None):
+        self._endpoint.read_cb(cb)
+
+    proc def close(self, on_close: ?action() -> None):
+        self._endpoint.close(on_close)
+
+    proc def restart(self):
+        pass
+
+
+actor _test_mock_cli_pipe_error(t: testing.EnvT):
+    """A pipe error fails the pending command and closes the pipe, then
+    on_connect reports it"""
+    endpoint = _BrokenPipeEndpoint("show version", b"user@device> ")
+    var done = False
+    var command_failed = False
+
+    def _fail_once(err: Exception):
+        if done:
+            return
+        done = True
+        t.failure(err)
+
+    def _on_connect(c: router_client.Client, err: ?Exception):
+        if err is None:
+            c.cmd(_on_command, "show version")
+            return
+        if not command_failed:
+            _fail_once(ValueError("on_connect reported the pipe error before the pending command failed"))
+            return
+        if not endpoint.is_closed():
+            _fail_once(ValueError("The pipe was not closed after the pipe error"))
+            return
+        if done:
+            return
+        done = True
+        t.success()
+
+    def _on_command(err: ?Exception, response: ?str):
+        if err is None:
+            _fail_once(ValueError("Expected the pipe error, got response: " + str(response)))
+            return
+        if "connection lost" not in str(err):
+            _fail_once(ValueError("Unexpected command error: " + str(err)))
+            return
+        command_failed = True
+
+    def _on_timeout():
+        _fail_once(ValueError("Timed out waiting for the pipe error"))
+
+    router_client.Client(
+        connect_cap=None,
+        address="broken-pipe",
+        username="broken-pipe",
+        on_connect=_on_connect,
+        device_type=drivers.DEVICE_TYPE_JUNIPER,
+        log_handler=t.log_handler,
+        transport_pipe=_BrokenPipe(endpoint)
+    )
+    after now 2.0: _on_timeout()
+
+
+actor _test_client_requires_connect_cap(t: testing.EnvT):
+    """Without connect_cap or transport_pipe, on_connect reports the error"""
+    def _on_connect(c: router_client.Client, err: ?Exception):
+        if err is not None and "TCP connect capability is required" in str(err):
+            t.success()
+        else:
+            t.failure(ValueError("Expected missing connect capability error, got: " + str(err)))
+
+    router_client.Client(
+        connect_cap=None,
+        address="localhost",
+        username="user",
+        on_connect=_on_connect,
+        device_type=drivers.DEVICE_TYPE_JUNIPER,
+        log_handler=t.log_handler
+    )
+
+
+actor _test_client_connect_timeout(t: testing.EnvT):
+    """on_connect reports a timeout when the device never shows a prompt"""
+    # No server on the other end, so the driver never sees a prompt
+    pipes = pipe.actor_pipe_pair()
+
+    def _on_connect(c: router_client.Client, err: ?Exception):
+        if err is not None and "Timed out" in str(err):
+            t.success()
+        else:
+            t.failure(ValueError("Expected a timeout, got: " + str(err)))
+
+    router_client.Client(
+        connect_cap=None,
+        address="actor-pipe",
+        username="actor-pipe",
+        on_connect=_on_connect,
+        device_type=drivers.DEVICE_TYPE_JUNIPER,
+        connect_timeout=0.1,
+        log_handler=t.log_handler,
+        transport_pipe=pipes.client
+    )

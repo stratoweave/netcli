@@ -2,36 +2,89 @@
 Driver State Machine Tests
 
 Tests the driver state machine using async actor pattern with external driving.
-Uses TestSSHWrapper to capture commands and handle_data() to simulate responses.
+Uses RecordingPipe to capture commands and handle_data() to simulate responses.
 """
 
 import testing
 import logging
+from pipe import Pipe
 import drivers
+
+class RecordingPipe(Pipe):
+    """Pipe that records the commands the driver writes"""
+    _sent_commands: list[str]
+
+    def __init__(self):
+        self._sent_commands = []
+
+    proc def write(self, data: bytes) -> None:
+        self._sent_commands.append(data.decode().strip())
+
+    proc def read_cb(self, cb: action(?Exception, ?bytes) -> None) -> None:
+        pass
+
+    proc def close(self, on_close: ?action() -> None) -> None:
+        if on_close is not None:
+            on_close()
+
+    proc def restart(self) -> None:
+        pass
+
+    def get_sent_commands(self) -> list[str]:
+        """Get list of commands sent to this pipe"""
+        return self._sent_commands.copy()
+
+    def clear_sent_commands(self) -> None:
+        """Clear the sent commands list"""
+        self._sent_commands = []
+
+def _initialize(driver: drivers.Driver, prompt: bytes) -> None:
+    """Initialize driver, answering the CLI start and each initialization
+    command with prompt"""
+    driver.initialize()
+    for _ in range(10):
+        if driver.is_ready():
+            return
+        driver.handle_data(prompt)
 
 actor _test_juniper_driver_initialization(t: testing.AsyncT):
     """Test Juniper driver initialization and state transitions"""
 
-    var test_ssh: drivers.TestSSHWrapper = drivers.TestSSHWrapper()
+    var test_pipe: RecordingPipe = RecordingPipe()
     var log: logging.Logger = logging.Logger(t.log_handler)
 
     def run_test() -> None:
-        driver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_ssh, log)
+        driver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_pipe, log)
 
         # Verify initial state
         if driver.get_state() != drivers.DRIVER_STATE_INITIALIZING:
             t.failure(Exception("Expected INITIALIZING state, got: " + driver.get_state()))
             return
 
-        # Initialize driver
+        # Initialization waits for the first prompt
         driver.initialize()
+        if driver.get_state() != drivers.DRIVER_STATE_INITIALIZING or len(test_pipe.get_sent_commands()) != 0:
+            t.failure(Exception("Expected no commands before the first prompt, got: " + str(test_pipe.get_sent_commands())))
+            return
+
+        # The first prompt sends the first initialization command only
+        driver.handle_data(b"user@device> ")
+        if test_pipe.get_sent_commands() != ["set cli screen-length 0"]:
+            t.failure(Exception("Expected only the first initialization command, got: " + str(test_pipe.get_sent_commands())))
+            return
+
+        # Answer the remaining initialization commands
+        for _ in range(10):
+            if driver.is_ready():
+                break
+            driver.handle_data(b"user@device> ")
 
         # Verify state transition to READY
         if driver.get_state() != drivers.DRIVER_STATE_READY:
             t.failure(Exception("Expected READY state after init, got: " + driver.get_state()))
             return
 
-        commands = test_ssh.get_sent_commands()
+        commands = test_pipe.get_sent_commands()
 
         # Return structured data about driver state and commands
         result = "state:" + driver.get_state() + "\ncommands:" + str(commands)
@@ -42,26 +95,41 @@ actor _test_juniper_driver_initialization(t: testing.AsyncT):
 actor _test_cisco_driver_initialization(t: testing.AsyncT):
     """Test Cisco driver initialization and state transitions"""
 
-    var test_ssh: drivers.TestSSHWrapper = drivers.TestSSHWrapper()
+    var test_pipe: RecordingPipe = RecordingPipe()
     var log: logging.Logger = logging.Logger(t.log_handler)
 
     def run_test() -> None:
-        driver = drivers.CiscoIOSXRDriver(drivers.DEVICE_TYPE_CISCO_IOSXR, test_ssh, log)
+        driver = drivers.CiscoIOSXRDriver(drivers.DEVICE_TYPE_CISCO_IOSXR, test_pipe, log)
 
         # Verify initial state
         if driver.get_state() != drivers.DRIVER_STATE_INITIALIZING:
             t.failure(Exception("Expected INITIALIZING state, got: " + driver.get_state()))
             return
 
-        # Initialize driver
+        # Initialization waits for the first prompt
         driver.initialize()
+        if driver.get_state() != drivers.DRIVER_STATE_INITIALIZING or len(test_pipe.get_sent_commands()) != 0:
+            t.failure(Exception("Expected no commands before the first prompt, got: " + str(test_pipe.get_sent_commands())))
+            return
+
+        # The first prompt sends the first initialization command only
+        driver.handle_data(b"RP/0/RP0/CPU0:ios#")
+        if test_pipe.get_sent_commands() != ["terminal length 0"]:
+            t.failure(Exception("Expected only the first initialization command, got: " + str(test_pipe.get_sent_commands())))
+            return
+
+        # Answer the remaining initialization commands
+        for _ in range(10):
+            if driver.is_ready():
+                break
+            driver.handle_data(b"RP/0/RP0/CPU0:ios#")
 
         # Verify state transition to READY
         if driver.get_state() != drivers.DRIVER_STATE_READY:
             t.failure(Exception("Expected READY state after init, got: " + driver.get_state()))
             return
 
-        commands = test_ssh.get_sent_commands()
+        commands = test_pipe.get_sent_commands()
 
         # Return structured data about driver state and commands
         result = "state:" + driver.get_state() + "\ncommands:" + str(commands)
@@ -72,13 +140,13 @@ actor _test_cisco_driver_initialization(t: testing.AsyncT):
 actor _test_command_execution_state_flow(t: testing.AsyncT):
     """Test command execution state flow: READY -> EXECUTING_COMMAND -> READY"""
 
-    var test_ssh: drivers.TestSSHWrapper = drivers.TestSSHWrapper()
+    var test_pipe: RecordingPipe = RecordingPipe()
     var log: logging.Logger = logging.Logger(t.log_handler)
-    var driver: drivers.JuniperDriver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_ssh, log)
+    var driver: drivers.JuniperDriver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_pipe, log)
 
     def run_test() -> None:
-        driver.initialize()
-        test_ssh.clear_sent_commands()
+        _initialize(driver, b"user@device> ")
+        test_pipe.clear_sent_commands()
 
         # Verify ready state
         if not driver.is_ready():
@@ -112,7 +180,7 @@ actor _test_command_execution_state_flow(t: testing.AsyncT):
             return
 
         # Return actual command response and driver state
-        commands = test_ssh.get_sent_commands()
+        commands = test_pipe.get_sent_commands()
         response_text = response if response is not None else "None"
         result = "response:" + response_text + "\nstate:" + driver.get_state() + "\ncommands:" + str(commands)
         t.success(result)
@@ -122,13 +190,13 @@ actor _test_command_execution_state_flow(t: testing.AsyncT):
 actor _test_configuration_and_commit_flow(t: testing.AsyncT):
     """Test configuration and commit state flow"""
 
-    var test_ssh: drivers.TestSSHWrapper = drivers.TestSSHWrapper()
+    var test_pipe: RecordingPipe = RecordingPipe()
     var log: logging.Logger = logging.Logger(t.log_handler)
-    var driver: drivers.JuniperDriver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_ssh, log)
+    var driver: drivers.JuniperDriver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_pipe, log)
 
     def run_test() -> None:
-        driver.initialize()
-        test_ssh.clear_sent_commands()
+        _initialize(driver, b"user@device> ")
+        test_pipe.clear_sent_commands()
 
         config_commands = ["set interfaces ge-0/0/0 description test"]
         driver.configure_and_commit(config_callback, config_commands)
@@ -157,7 +225,7 @@ actor _test_configuration_and_commit_flow(t: testing.AsyncT):
             return
 
         # Return session log and driver state
-        commands = test_ssh.get_sent_commands()
+        commands = test_pipe.get_sent_commands()
         result = "session_log:" + session_log + "\nstate:" + driver.get_state() + "\ncommands:" + str(commands)
         t.success(result)
 
@@ -166,13 +234,13 @@ actor _test_configuration_and_commit_flow(t: testing.AsyncT):
 actor _test_commit_failure_automatic_rollback(t: testing.AsyncT):
     """Test automatic rollback on commit failure"""
 
-    var test_ssh: drivers.TestSSHWrapper = drivers.TestSSHWrapper()
+    var test_pipe: RecordingPipe = RecordingPipe()
     var log: logging.Logger = logging.Logger(t.log_handler)
-    var driver: drivers.JuniperDriver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_ssh, log)
+    var driver: drivers.JuniperDriver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_pipe, log)
 
     def run_test() -> None:
-        driver.initialize()
-        test_ssh.clear_sent_commands()
+        _initialize(driver, b"user@device> ")
+        test_pipe.clear_sent_commands()
 
         config_commands = ["set invalid config"]
         driver.configure_and_commit(config_callback, config_commands)
@@ -200,7 +268,7 @@ actor _test_commit_failure_automatic_rollback(t: testing.AsyncT):
             return
 
         # Return error message, session log, and commands
-        commands = test_ssh.get_sent_commands()
+        commands = test_pipe.get_sent_commands()
         result = "error:" + error_msg + "\nsession_log:" + session_log + "\ncommands:" + str(commands)
         t.success(result)
 
@@ -209,13 +277,13 @@ actor _test_commit_failure_automatic_rollback(t: testing.AsyncT):
 actor _test_iosxr_commit_failure_staged_commit_flow(t: testing.AsyncT):
     """Test IOS XR commit failure detection with staged commit commands"""
 
-    var test_ssh: drivers.TestSSHWrapper = drivers.TestSSHWrapper()
+    var test_pipe: RecordingPipe = RecordingPipe()
     var log: logging.Logger = logging.Logger(t.log_handler)
-    var driver: drivers.CiscoIOSXRDriver = drivers.CiscoIOSXRDriver(drivers.DEVICE_TYPE_CISCO_IOSXR, test_ssh, log)
+    var driver: drivers.CiscoIOSXRDriver = drivers.CiscoIOSXRDriver(drivers.DEVICE_TYPE_CISCO_IOSXR, test_pipe, log)
 
     def run_test() -> None:
-        driver.initialize()
-        test_ssh.clear_sent_commands()
+        _initialize(driver, b"RP/0/RP0/CPU0:ios#")
+        test_pipe.clear_sent_commands()
 
         config_commands = ["service-policy output FOOBAR"]
         driver.configure_and_commit(config_callback, config_commands)
@@ -244,7 +312,7 @@ actor _test_iosxr_commit_failure_staged_commit_flow(t: testing.AsyncT):
             t.failure(Exception("Expected READY state after abort, got: " + driver.get_state()))
             return
 
-        commands = test_ssh.get_sent_commands()
+        commands = test_pipe.get_sent_commands()
         expected_commands = ["configure terminal", "service-policy output FOOBAR", "commit", "abort", "end"]
         if commands != expected_commands:
             t.failure(Exception("Expected IOS XR abort sequence after commit failure, got: " + str(commands)))
@@ -258,11 +326,11 @@ actor _test_iosxr_commit_failure_staged_commit_flow(t: testing.AsyncT):
 actor _test_driver_state_transition_validation(t: testing.AsyncT):
     """Test state transition validation logic"""
 
-    var test_ssh: drivers.TestSSHWrapper = drivers.TestSSHWrapper()
+    var test_pipe: RecordingPipe = RecordingPipe()
     var log: logging.Logger = logging.Logger(t.log_handler)
 
     def run_test() -> None:
-        driver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_ssh, log)
+        driver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_pipe, log)
 
         # Test valid transitions
         valid_tests = [
@@ -304,6 +372,32 @@ actor _test_driver_state_transition_validation(t: testing.AsyncT):
             invalid_results.append(from_state + "->" + to_state + ":invalid")
 
         result = "valid_transitions:" + str(valid_results) + "\ninvalid_transitions:" + str(invalid_results)
+        t.success(result)
+
+    after 0: run_test()
+
+actor _test_disconnect_fails_pending_command(t: testing.AsyncT):
+    """Test that a disconnect fails the pending command and enters DISCONNECTED"""
+
+    var test_pipe: RecordingPipe = RecordingPipe()
+    var log: logging.Logger = logging.Logger(t.log_handler)
+    var driver: drivers.JuniperDriver = drivers.JuniperDriver(drivers.DEVICE_TYPE_JUNIPER, test_pipe, log)
+
+    def run_test() -> None:
+        _initialize(driver, b"user@device> ")
+        driver.execute_command(command_callback, "show version")
+        driver.handle_disconnect(OSError("connection lost"))
+
+    def command_callback(err: ?Exception, response: ?str) -> None:
+        if err is None:
+            t.failure(Exception("Expected the disconnect error, got response: " + str(response)))
+            return
+
+        if driver.get_state() != drivers.DRIVER_STATE_DISCONNECTED:
+            t.failure(Exception("Expected DISCONNECTED state, got: " + driver.get_state()))
+            return
+
+        result = "error:" + str(err) + "\nstate:" + driver.get_state()
         t.success(result)
 
     after 0: run_test()

@@ -1,59 +1,10 @@
 """Router driver auto-detection and base classes"""
 
 import logging
-import pipe
-import ssh
+from pipe import Pipe
 import re
 import testing
 import time
-
-# SSH Client Wrapper for dependency injection and testing
-class SSHClientWrapper(object):
-    """Base wrapper interface for SSH client operations"""
-    send_str: proc(data: str) -> bool
-
-class ProductionSSHWrapper(SSHClientWrapper):
-    """Production wrapper that delegates to real SSH client"""
-    _ssh_client: ssh.SSHClient
-
-    def __init__(self, ssh_client: ssh.SSHClient):
-        self._ssh_client = ssh_client
-
-    def send_str(self, data: str) -> bool:
-        """Send string data via SSH client"""
-        return self._ssh_client.send_str(data)
-
-class PipeWrapper(SSHClientWrapper):
-    """Wrapper that sends CLI bytes over a Pipe transport"""
-    _pipe: pipe.Pipe
-
-    def __init__(self, transport: pipe.Pipe):
-        self._pipe = transport
-
-    def send_str(self, data: str) -> bool:
-        """Send string data via Pipe"""
-        self._pipe.write(data.encode())
-        return True
-
-class TestSSHWrapper(SSHClientWrapper):
-    """Test wrapper that captures sent commands for verification"""
-    _sent_commands: list[str]
-
-    def __init__(self):
-        self._sent_commands = []
-
-    def send_str(self, data: str) -> bool:
-        """Capture sent command instead of sending via SSH"""
-        self._sent_commands.append(data.strip())
-        return True
-
-    def get_sent_commands(self) -> list[str]:
-        """Get list of commands sent to this wrapper"""
-        return self._sent_commands.copy()
-
-    def clear_sent_commands(self) -> None:
-        """Clear the sent commands list"""
-        self._sent_commands = []
 
 # Device types
 DEVICE_TYPE_UNKNOWN: str = "unknown"
@@ -79,13 +30,14 @@ class Driver(object):
     """Base implementation class for router drivers"""
 
     device_type: str
-    ssh_client: SSHClientWrapper
+    pipe: Pipe
     log: logging.Logger
     initialize: proc() -> None
     is_ready: proc() -> bool
     get_state: proc() -> str
     is_valid_transition: proc(from_state: str, to_state: str) -> bool
     handle_data: proc(data: bytes) -> None
+    handle_disconnect: proc(error: Exception) -> None
     execute_command: proc(cb: action(err: ?Exception, response: ?str) -> None, command: str) -> None
     # TODO: default arg?
     #configure_and_commit: proc(cb: action(err: ?Exception, session_log: str) -> None, config: list[str], skip_pre_config: bool) -> None
@@ -106,10 +58,11 @@ class BaseDriver(Driver):
     _config_commands: list[str]
     _pending_commit_commands: list[str]
     _rollback_commits: int
+    _init_commands: list[str]
 
-    def __init__(self, device_type: str, ssh_client: SSHClientWrapper, log: logging.Logger):
+    def __init__(self, device_type: str, pipe: Pipe, log: logging.Logger):
         self.device_type = device_type
-        self.ssh_client = ssh_client
+        self.pipe = pipe
         self.log = log
         self._output_buffer = ""
         self._session_log = ""
@@ -120,11 +73,25 @@ class BaseDriver(Driver):
         self._config_commands = []
         self._pending_commit_commands = []
         self._rollback_commits = 0
+        self._init_commands = []
 
     def initialize(self) -> None:
-        """Initialize driver - override in subclasses"""
-        self.log.info("Initializing base driver")
-        self._transition_to_state(DRIVER_STATE_READY)
+        """Initialize driver
+
+        The driver waits for the first prompt, then sends the initialization
+        commands one at a time, each after the prompt of the one before. It is
+        READY on the prompt after the last one.
+        """
+        self.log.info("Initializing driver", {"device_type": self.device_type})
+        self._init_commands = self._get_init_commands()
+
+    def _get_init_commands(self) -> list[str]:
+        """Get device-specific initialization commands - override in subclasses if needed"""
+        return []
+
+    def _send_command(self, command: str) -> None:
+        """Send one command line to the device"""
+        self.pipe.write((command + "\n").encode())
 
     def is_ready(self) -> bool:
         """Check if driver is ready"""
@@ -167,8 +134,23 @@ class BaseDriver(Driver):
     def _handle_error(self, error: Exception) -> None:
         """Handle error state transition and cleanup"""
         self.log.error("Driver error occurred", {"error": str(error), "current_state": self._state})
+        self._fail_pending_callbacks(error)
 
-        # Call pending callbacks with error
+        # Transition to error state
+        self._transition_to_state(DRIVER_STATE_ERROR)
+        self._output_buffer = ""
+
+    def handle_disconnect(self, error: Exception) -> None:
+        """Fail pending operations with error and enter DISCONNECTED"""
+        if self._state == DRIVER_STATE_DISCONNECTED:
+            return
+        self.log.info("Driver disconnected", {"error": str(error), "current_state": self._state})
+        self._fail_pending_callbacks(error)
+        self._transition_to_state(DRIVER_STATE_DISCONNECTED)
+        self._output_buffer = ""
+
+    def _fail_pending_callbacks(self, error: Exception) -> None:
+        """Call pending command and configuration callbacks with error"""
         cmd_callback = self._command_callback
         if cmd_callback is not None:
             self._command_callback = None
@@ -181,11 +163,6 @@ class BaseDriver(Driver):
             self._config_commands = []
             self._pending_commit_commands = []
             config_callback(error, self._session_log)
-
-
-        # Transition to error state
-        self._transition_to_state(DRIVER_STATE_ERROR)
-        self._output_buffer = ""
 
     def handle_data(self, data: bytes) -> None:
         """Handle incoming data"""
@@ -211,7 +188,17 @@ class BaseDriver(Driver):
     def _handle_prompt_received(self) -> None:
         """Handle when prompt is received"""
         self.log.debug("_handle_prompt_received", {"state": self._state, "output_buffer": self._output_buffer})
-        if self._state == DRIVER_STATE_READY:
+        if self._state == DRIVER_STATE_INITIALIZING:
+            # The first prompt means the CLI is up, each one after it ends an
+            # initialization command
+            self._output_buffer = ""
+            if len(self._init_commands) > 0:
+                cmd = self._init_commands.pop(0)
+                self._send_command(cmd)
+            else:
+                self._transition_to_state(DRIVER_STATE_READY)
+
+        elif self._state == DRIVER_STATE_READY:
             self._output_buffer = ""
 
         elif self._state == DRIVER_STATE_EXECUTING_COMMAND:
@@ -238,7 +225,7 @@ class BaseDriver(Driver):
                 self._transition_to_state(DRIVER_STATE_ENTERING_CONFIG)
                 config_cmds = self._get_config_commands()
                 for cmd in config_cmds:
-                    self.ssh_client.send_str(cmd + "\n")
+                    self._send_command(cmd)
 
         elif self._state == DRIVER_STATE_ENTERING_CONFIG:
             self._transition_to_state(DRIVER_STATE_CONFIG_MODE)
@@ -246,14 +233,14 @@ class BaseDriver(Driver):
             if len(self._config_commands) > 0:
                 self._transition_to_state(DRIVER_STATE_APPLYING_CONFIG)
                 cmd = self._config_commands.pop(0)
-                self.ssh_client.send_str(cmd + "\n")
+                self._send_command(cmd)
             else:
                 # No config commands, go straight to commit
                 self._transition_to_state(DRIVER_STATE_COMMITTING)
                 self._pending_commit_commands = self._get_commit_commands().copy()
                 if len(self._pending_commit_commands) > 0:
                     cmd = self._pending_commit_commands.pop(0)
-                    self.ssh_client.send_str(cmd + "\n")
+                    self._send_command(cmd)
             self._output_buffer = ""
 
         elif self._state == DRIVER_STATE_APPLYING_CONFIG:
@@ -265,7 +252,7 @@ class BaseDriver(Driver):
             elif len(self._config_commands) > 0:
                 # Send next config command
                 cmd = self._config_commands.pop(0)
-                self.ssh_client.send_str(cmd + "\n")
+                self._send_command(cmd)
                 self._output_buffer = ""
             else:
                 # All config commands sent, proceed to commit
@@ -273,7 +260,7 @@ class BaseDriver(Driver):
                 self._pending_commit_commands = self._get_commit_commands().copy()
                 if len(self._pending_commit_commands) > 0:
                     cmd = self._pending_commit_commands.pop(0)
-                    self.ssh_client.send_str(cmd + "\n")
+                    self._send_command(cmd)
                 self._output_buffer = ""
 
         elif self._state == DRIVER_STATE_COMMITTING:
@@ -286,7 +273,7 @@ class BaseDriver(Driver):
             elif len(self._pending_commit_commands) > 0:
                 # Send next commit-phase command (e.g. exit/end/write memory)
                 cmd = self._pending_commit_commands.pop(0)
-                self.ssh_client.send_str(cmd + "\n")
+                self._send_command(cmd)
                 self._output_buffer = ""
             else:
                 # Configuration committed successfully
@@ -356,7 +343,7 @@ class BaseDriver(Driver):
         self._transition_to_state(DRIVER_STATE_EXECUTING_COMMAND)
         self._output_buffer = ""
 
-        self.ssh_client.send_str(command + "\n")
+        self._send_command(command)
 
     def _get_config_commands(self) -> list[str]:
         """Get device-specific config mode commands - must be implemented by subclasses"""
@@ -400,7 +387,7 @@ class BaseDriver(Driver):
                 # Transition to PRE_CONFIG state and execute pre-config commands
                 self._transition_to_state(DRIVER_STATE_PRE_CONFIG)
                 for cmd in pre_config_cmds:
-                    self.ssh_client.send_str(cmd + "\n")
+                    self._send_command(cmd)
                 return  # Will continue from PRE_CONFIG state handler
 
         # Skip pre-config or no pre-config needed, go straight to entering config mode
@@ -408,7 +395,7 @@ class BaseDriver(Driver):
         # Enter config mode using device-specific commands
         config_cmds = self._get_config_commands()
         for cmd in config_cmds:
-            self.ssh_client.send_str(cmd + "\n")
+            self._send_command(cmd)
 
     def _handle_configuration_failure(self) -> None:
         """Handle configuration failure - platform specific behavior"""
@@ -419,7 +406,7 @@ class BaseDriver(Driver):
         # Send device-specific abort commands
         abort_cmds = self._get_abort_commands()
         for cmd in abort_cmds:
-            self.ssh_client.send_str(cmd + "\n")
+            self._send_command(cmd)
 
     def rollback_configuration(self, cb: action(err: ?Exception, session_log: str) -> None, commits_back: int) -> None:
         """Rollback to previous configuration"""
@@ -439,7 +426,7 @@ class BaseDriver(Driver):
         # Send device-specific rollback commands
         rollback_cmds = self._get_rollback_commands(commits_back)
         for cmd in rollback_cmds:
-            self.ssh_client.send_str(cmd + "\n")
+            self._send_command(cmd)
 
     proc def _get_abort_commands(self) -> list[str]:
         """Get device-specific abort commands - must be implemented by subclasses"""
@@ -449,15 +436,12 @@ class BaseDriver(Driver):
         """Get device-specific rollback commands - must be implemented by subclasses"""
         raise NotImplementedError("_get_rollback_commands must be implemented by subclasses")
 
-def auto_detect(ssh_client: ssh.SSHClient) -> str:
+def auto_detect() -> str:
     """
     Auto-detect device type based on SSH banner and initial prompts
 
     This is a simplified detection that would need to be enhanced
     for production use. Currently returns unknown for all devices.
-
-    Args:
-        ssh_client: Established SSH connection
 
     Returns:
         Device type string
@@ -466,24 +450,24 @@ def auto_detect(ssh_client: ssh.SSHClient) -> str:
     # that analyzes the SSH banner, initial prompts, etc.
     return DEVICE_TYPE_UNKNOWN
 
-def create_driver(device_type: str, ssh_client: SSHClientWrapper, log: logging.Logger) -> ?Driver:
+def create_driver(device_type: str, pipe: Pipe, log: logging.Logger) -> ?Driver:
     """
     Create appropriate driver instance based on device type
 
     Args:
         device_type: Device type string
-        ssh_client: SSH connection
+        pipe: Byte stream to the device CLI
         log: Logger instance
 
     Returns:
         Driver instance or None if unsupported
     """
     if device_type == DEVICE_TYPE_JUNIPER:
-        return JuniperDriver(device_type, ssh_client, log)
+        return JuniperDriver(device_type, pipe, log)
     elif device_type == DEVICE_TYPE_CISCO_IOSXR:
-        return CiscoIOSXRDriver(device_type, ssh_client, log)
+        return CiscoIOSXRDriver(device_type, pipe, log)
     elif device_type == DEVICE_TYPE_CISCO_IOSXE:
-        return CiscoIOSXEDriver(device_type, ssh_client, log)
+        return CiscoIOSXEDriver(device_type, pipe, log)
     else:
         log.warning("Unsupported device type", {"device_type": device_type})
         return None
@@ -492,23 +476,16 @@ def create_driver(device_type: str, ssh_client: SSHClientWrapper, log: logging.L
 class JuniperDriver(BaseDriver):
     """Juniper JUNOS driver implementation"""
 
-    def initialize(self) -> None:
-        """Initialize Juniper driver"""
-        self.log.info("Initializing Juniper driver")
-
-        # Send initialization commands to disable pagination and prompts
-        # These commands ensure clean automation without interactive interruptions
-        init_commands = [
+    def _get_init_commands(self) -> list[str]:
+        """Get Juniper initialization commands"""
+        # Disable pagination and prompts for clean automation without
+        # interactive interruptions
+        return [
             "set cli screen-length 0",        # Disable pagination
             "set cli screen-width 0",         # Disable line wrapping
             "set cli complete-on-space off",  # Disable auto-completion on space
             "set cli idle-timeout 0"          # Disable idle timeout
         ]
-
-        for cmd in init_commands:
-            self.ssh_client.send_str(cmd + "\n")
-
-        self._transition_to_state(DRIVER_STATE_READY)
 
     def _is_device_prompt(self, text: str) -> bool:
         """Check if text contains Juniper prompt"""
@@ -560,23 +537,16 @@ class JuniperDriver(BaseDriver):
 class CiscoIOSXRDriver(BaseDriver):
     """Cisco IOS XR driver implementation"""
 
-    def initialize(self) -> None:
-        """Initialize Cisco IOS XR driver"""
-        self.log.info("Initializing Cisco IOS XR driver")
-
-        # Send initialization commands to disable pagination and prompts
-        # These commands ensure clean automation without interactive interruptions
-        init_commands = [
+    def _get_init_commands(self) -> list[str]:
+        """Get Cisco IOS XR initialization commands"""
+        # Disable pagination and prompts for clean automation without
+        # interactive interruptions
+        return [
             "terminal length 0",              # Disable pagination
             "terminal width 0",               # Disable line wrapping
             "terminal exec prompt no-timestamp",  # Remove timestamps from prompts
             "terminal monitor disable"             # Disable console logging interruptions
         ]
-
-        for cmd in init_commands:
-            self.ssh_client.send_str(cmd + "\n")
-
-        self._transition_to_state(DRIVER_STATE_READY)
 
     def _is_device_prompt(self, text: str) -> bool:
         """Check if text contains IOS XR prompt"""
@@ -639,24 +609,16 @@ class CiscoIOSXEDriver(BaseDriver):
 
     _archive_checkpoint_stack: list[str]  # Stack of archive checkpoints for rollback
 
-    def __init__(self, device_type: str, ssh_client: SSHClientWrapper, log: logging.Logger):
-        BaseDriver.__init__(self, device_type, ssh_client, log)
+    def __init__(self, device_type: str, pipe: Pipe, log: logging.Logger):
+        BaseDriver.__init__(self, device_type, pipe, log)
         self._archive_checkpoint_stack = []
 
-    def initialize(self) -> None:
-        """Initialize Cisco IOS XE driver"""
-        self.log.info("Initializing Cisco IOS XE driver")
-
-        # Send initialization commands
-        init_commands = [
+    def _get_init_commands(self) -> list[str]:
+        """Get Cisco IOS XE initialization commands"""
+        return [
             "terminal length 0",              # Disable pagination
             "terminal width 0"                # Disable line wrapping
         ]
-
-        for cmd in init_commands:
-            self.ssh_client.send_str(cmd + "\n")
-
-        self._transition_to_state(DRIVER_STATE_READY)
 
     def _is_device_prompt(self, text: str) -> bool:
         """Check if text contains IOS XE prompt"""
