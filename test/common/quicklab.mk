@@ -64,11 +64,13 @@ FILTER_JUNOS_METADATA = sed 's/ junos:commit-seconds="[0-9]*"//g; s/ junos:commi
 
 .phony: test
 test::
-	$(MAKE) $(addprefix get-dev-config-,$(ROUTERS_XR) $(ROUTERS_CRPD) $(ROUTERS_XE)) | $(FILTER_JUNOS_METADATA) > config-snapshot-before.txt
+	$(MAKE) $(addprefix get-dev-config-,$(ROUTERS_XR) $(ROUTERS_CRPD) $(ROUTERS_XE)) > config-snapshot-before.raw
+	$(FILTER_JUNOS_METADATA) config-snapshot-before.raw > config-snapshot-before.txt
 	for router in $(ROUTERS_XR) $(ROUTERS_CRPD) $(ROUTERS_XE); do \
 		docker exec $(INTERACTIVE) $(TESTENV)-netcli /$(TEST_BINARY) --address $$router --port 22 --username clab --password clab@123; \
 	done
-	$(MAKE) $(addprefix get-dev-config-,$(ROUTERS_XR) $(ROUTERS_CRPD) $(ROUTERS_XE)) | $(FILTER_JUNOS_METADATA) > config-snapshot-after.txt
+	$(MAKE) $(addprefix get-dev-config-,$(ROUTERS_XR) $(ROUTERS_CRPD) $(ROUTERS_XE)) > config-snapshot-after.raw
+	$(FILTER_JUNOS_METADATA) config-snapshot-after.raw > config-snapshot-after.txt
 	diff -u config-snapshot-before.txt config-snapshot-after.txt
 
 .PHONY: save-logs

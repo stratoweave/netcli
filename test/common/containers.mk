@@ -13,6 +13,10 @@ $(addprefix platform-wait-,$(ROUTERS_CRPD)):
 $(addprefix platform-wait-,$(ROUTERS_XE)):
 # Wait for "Startup complete" to appear in the vrnetlab container logs
 	timeout --foreground $(WAIT) bash -c "until docker logs $(TESTENV)-$(@:platform-wait-%=%) 2>&1 | grep -q 'Startup complete'; do sleep 1; done"
+# NETCONF starts some time after the vrnetlab bootstrap configuration enables
+# netconf-yang, so retry the hello quietly, then once more to show the result
+	timeout --foreground $(WAIT) bash -c "until docker run --rm --network container:$(TESTENV)-netcli ghcr.io/notconf/notconf:debug netconf-console2 --host $(@:platform-wait-%=%) --port 830 --user clab --pass clab@123 --hello > /dev/null 2>&1; do sleep 5; done" || true
+	docker run $(INTERACTIVE) --rm --network container:$(TESTENV)-netcli ghcr.io/notconf/notconf:debug netconf-console2 --host $(@:platform-wait-%=%) --port 830 --user clab --pass clab@123 --hello
 
 .PHONY: cli $(addprefix platform-cli-,$(ROUTERS_XR) $(ROUTERS_CRPD) $(ROUTERS_XE))
 

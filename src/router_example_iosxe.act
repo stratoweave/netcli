@@ -304,7 +304,28 @@ actor IOSXEExample(process, on_done, username: str, password: str, address: str,
                 print(response_str[:500])
                 if len(response_str) > 500:
                     print("... (truncated)")
-        cleanup()  # Proceed to cleanup
+        remove_archive()  # Proceed to remove the archive configuration
+
+    def remove_archive() -> None:
+        """Remove the archive configuration, leaving the device as the example found it"""
+        c = client
+        if c is not None and c.is_connected():
+            print("\n=== Removing archive configuration ===")
+            # Use skip_pre_config=True since we're removing archive itself
+            c.configure_and_commit(on_archive_removed, on_archive_remove_error, ["no archive"], True)
+        else:
+            print("Client not connected for archive removal")
+            cleanup()
+
+    def on_archive_removed(response: str) -> None:
+        """Handle successful archive removal"""
+        print("Archive configuration removed")
+        cleanup()
+
+    def on_archive_remove_error(err: Exception, response: str) -> None:
+        """Handle archive removal error"""
+        print("ERROR: Archive removal failed:", str(err))
+        cleanup()
 
     def cleanup() -> None:
         """Clean up the example"""
