@@ -1,4 +1,4 @@
-import argparse
+import std.argparse
 import logging
 import net
 
@@ -161,7 +161,7 @@ actor main(env):
         env.exit(exit_code)
 
     def _parse_args():
-        p = argparse.Parser()
+        p = std.argparse.Parser()
         p.add_option("username", "str", default="admin", help="Username for authentication", short="u")
         p.add_option("password", "str", default="admin", help="Password for authentication", short="p")
         p.add_option("address", "str", default="localhost", help="Router IP address or hostname", short="a")
@@ -177,9 +177,9 @@ actor main(env):
         port = args.get_int("port")
 
         CiscoExample(net.TCPConnectCap(net.TCPCap(net.NetCap(env.cap))), done, username, password, address, port)
-    except argparse.PrintUsage as exc:
+    except std.argparse.PrintUsage as exc:
         print(exc.error_message)
         env.exit(0)
-    except argparse.ArgumentError as exc:
+    except std.argparse.ArgumentError as exc:
         print(exc.error_message, err=True)
         env.exit(1)

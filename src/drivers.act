@@ -2,7 +2,7 @@
 
 import logging
 from pipe import Pipe
-import re
+import std.re
 import testing
 import time
 
@@ -494,11 +494,11 @@ class JuniperDriver(BaseDriver):
             stripped = line.strip()
             if len(stripped) > 0:
                 # Operational mode: user@hostname>
-                match = re.match(r"^[\w\-\.]+@[\w\-\.]+>\s*$", stripped)
+                match = std.re.match(r"^[\w\-\.]+@[\w\-\.]+>\s*$", stripped)
                 if match is not None:
                     return True
                 # Configuration mode: user@hostname#
-                match = re.match(r"^[\w\-\.]+@[\w\-\.]+#\s*$", stripped)
+                match = std.re.match(r"^[\w\-\.]+@[\w\-\.]+#\s*$", stripped)
                 if match is not None:
                     return True
         return False
@@ -555,11 +555,11 @@ class CiscoIOSXRDriver(BaseDriver):
             stripped = line.strip()
             if len(stripped) > 0:
                 # Exec mode: RP/0/RP0/CPU0:hostname#
-                match = re.match(r"^RP/\d+/\w+/CPU\d+:[\w\-\.]+#\s*$", stripped)
+                match = std.re.match(r"^RP/\d+/\w+/CPU\d+:[\w\-\.]+#\s*$", stripped)
                 if match is not None:
                     return True
                 # Config mode: RP/0/RP0/CPU0:hostname(config)#
-                match = re.match(r"^RP/\d+/\w+/CPU\d+:[\w\-\.]+\(config[^\)]*\)#\s*$", stripped)
+                match = std.re.match(r"^RP/\d+/\w+/CPU\d+:[\w\-\.]+\(config[^\)]*\)#\s*$", stripped)
                 if match is not None:
                     return True
         return False
@@ -627,11 +627,11 @@ class CiscoIOSXEDriver(BaseDriver):
             stripped = line.strip()
             if len(stripped) > 0:
                 # Exec mode: hostname# or hostname>
-                match = re.match(r"^[\w\-\.]+[>#]\s*$", stripped)
+                match = std.re.match(r"^[\w\-\.]+[>#]\s*$", stripped)
                 if match is not None:
                     return True
                 # Config mode: hostname(config)# or hostname(config-if)#
-                match = re.match(r"^[\w\-\.]+\([\w\-]+\)#\s*$", stripped)
+                match = std.re.match(r"^[\w\-\.]+\([\w\-]+\)#\s*$", stripped)
                 if match is not None:
                     return True
         return False
@@ -714,7 +714,7 @@ class CiscoIOSXEDriver(BaseDriver):
 def _get_iosxe_archive_name(show_archive: str):
     for line in show_archive.splitlines():
         if "Most Recent" in line:
-            parts = re.split(r"\s+", line.strip())
+            parts = std.re.split(r"\s+", line.strip())
             return parts[1]
 
 
