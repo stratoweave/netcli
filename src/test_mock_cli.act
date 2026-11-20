@@ -10,18 +10,9 @@ import router_client
 
 actor _test_mock_cli_canned_response(t: testing.EnvT):
     log_handler = t.log_handler
-    pipes = pipe.actor_pipe_pair()
+    pipes = pipe.create_actor_pipe_pair()
     var client: ?router_client.Client = None
     var done = False
-
-    mock_cli.MockCliServer(
-        transport=pipes.server,
-        prompt="user@device> ",
-        canned_responses={
-            "show version": "Junos mock version 24.4R1"
-        },
-        log_handler=log_handler
-    )
 
     def _fail_once(err: Exception):
         if done:
@@ -62,21 +53,34 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
     def _on_timeout():
         _fail_once(ValueError("Timed out waiting for mock CLI canned response"))
 
-    client = router_client.Client(
-        connect_cap=None,
-        address="actor-pipe",
-        username="actor-pipe",
-        on_connect=_on_connect,
-        device_type=drivers.DEVICE_TYPE_JUNIPER,
-        log_handler=log_handler,
-        transport_pipe=pipes.client
-    )
-    after now 2.0: _on_timeout()
+    proc def __startup__():
+        pipe.connect_actor_pipe_pair(pipes)
+        mock_cli.MockCliServer(
+            transport=pipes.server,
+            prompt="user@device> ",
+            canned_responses={
+                "show version": "Junos mock version 24.4R1"
+            },
+            log_handler=log_handler
+        )
+
+        client = router_client.Client(
+            connect_cap=None,
+            address="actor-pipe",
+            username="actor-pipe",
+            on_connect=_on_connect,
+            device_type=drivers.DEVICE_TYPE_JUNIPER,
+            log_handler=log_handler,
+            transport_pipe=pipes.client
+        )
+        after now 2.0: _on_timeout()
+
+    __startup__()
 
 
 actor _test_mock_cli_callback_response(t: testing.EnvT):
     log_handler = t.log_handler
-    pipes = pipe.actor_pipe_pair()
+    pipes = pipe.create_actor_pipe_pair()
     var client: ?router_client.Client = None
     var done = False
 
@@ -85,13 +89,6 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
             server.respond(command, "System booted 3 days ago")
         else:
             server.respond(command, "")
-
-    mock_cli.MockCliServer(
-        transport=pipes.server,
-        prompt="user@device> ",
-        on_command=_on_mock_command,
-        log_handler=log_handler
-    )
 
     def _fail_once(err: Exception):
         if done:
@@ -132,16 +129,27 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
     def _on_timeout():
         _fail_once(ValueError("Timed out waiting for mock CLI callback response"))
 
-    client = router_client.Client(
-        connect_cap=None,
-        address="actor-pipe",
-        username="actor-pipe",
-        on_connect=_on_connect,
-        device_type=drivers.DEVICE_TYPE_JUNIPER,
-        log_handler=log_handler,
-        transport_pipe=pipes.client
-    )
-    after now 2.0: _on_timeout()
+    proc def __startup__():
+        pipe.connect_actor_pipe_pair(pipes)
+        mock_cli.MockCliServer(
+            transport=pipes.server,
+            prompt="user@device> ",
+            on_command=_on_mock_command,
+            log_handler=log_handler
+        )
+
+        client = router_client.Client(
+            connect_cap=None,
+            address="actor-pipe",
+            username="actor-pipe",
+            on_connect=_on_connect,
+            device_type=drivers.DEVICE_TYPE_JUNIPER,
+            log_handler=log_handler,
+            transport_pipe=pipes.client
+        )
+        after now 2.0: _on_timeout()
+
+    __startup__()
 
 
 actor _BrokenPipeEndpoint(break_on: str, prompt: bytes):
@@ -231,16 +239,19 @@ actor _test_mock_cli_pipe_error(t: testing.EnvT):
     def _on_timeout():
         _fail_once(ValueError("Timed out waiting for the pipe error"))
 
-    router_client.Client(
-        connect_cap=None,
-        address="broken-pipe",
-        username="broken-pipe",
-        on_connect=_on_connect,
-        device_type=drivers.DEVICE_TYPE_JUNIPER,
-        log_handler=t.log_handler,
-        transport_pipe=_BrokenPipe(endpoint)
-    )
-    after now 2.0: _on_timeout()
+    proc def __startup__():
+        router_client.Client(
+            connect_cap=None,
+            address="broken-pipe",
+            username="broken-pipe",
+            on_connect=_on_connect,
+            device_type=drivers.DEVICE_TYPE_JUNIPER,
+            log_handler=t.log_handler,
+            transport_pipe=_BrokenPipe(endpoint)
+        )
+        after now 2.0: _on_timeout()
+
+    __startup__()
 
 
 actor _test_client_requires_connect_cap(t: testing.EnvT):
@@ -251,20 +262,23 @@ actor _test_client_requires_connect_cap(t: testing.EnvT):
         else:
             t.failure(ValueError("Expected missing connect capability error, got: " + str(err)))
 
-    router_client.Client(
-        connect_cap=None,
-        address="localhost",
-        username="user",
-        on_connect=_on_connect,
-        device_type=drivers.DEVICE_TYPE_JUNIPER,
-        log_handler=t.log_handler
-    )
+    proc def __startup__():
+        router_client.Client(
+            connect_cap=None,
+            address="localhost",
+            username="user",
+            on_connect=_on_connect,
+            device_type=drivers.DEVICE_TYPE_JUNIPER,
+            log_handler=t.log_handler
+        )
+
+    __startup__()
 
 
 actor _test_client_connect_timeout(t: testing.EnvT):
     """on_connect reports a timeout when the device never shows a prompt"""
     # No server on the other end, so the driver never sees a prompt
-    pipes = pipe.actor_pipe_pair()
+    pipes = pipe.create_actor_pipe_pair()
 
     def _on_connect(c: router_client.Client, err: ?Exception):
         if err is not None and "Timed out" in str(err):
@@ -272,13 +286,17 @@ actor _test_client_connect_timeout(t: testing.EnvT):
         else:
             t.failure(ValueError("Expected a timeout, got: " + str(err)))
 
-    router_client.Client(
-        connect_cap=None,
-        address="actor-pipe",
-        username="actor-pipe",
-        on_connect=_on_connect,
-        device_type=drivers.DEVICE_TYPE_JUNIPER,
-        connect_timeout=0.1,
-        log_handler=t.log_handler,
-        transport_pipe=pipes.client
-    )
+    proc def __startup__():
+        pipe.connect_actor_pipe_pair(pipes)
+        router_client.Client(
+            connect_cap=None,
+            address="actor-pipe",
+            username="actor-pipe",
+            on_connect=_on_connect,
+            device_type=drivers.DEVICE_TYPE_JUNIPER,
+            connect_timeout=0.1,
+            log_handler=t.log_handler,
+            transport_pipe=pipes.client
+        )
+
+    __startup__()
