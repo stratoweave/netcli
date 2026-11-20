@@ -93,7 +93,6 @@ actor _test_juniper_driver_initialization(t: testing.AsyncT):
 
         after 0: run_test()
 
-    __startup__()
 
 
 actor _test_cisco_driver_initialization(t: testing.AsyncT):
@@ -142,7 +141,6 @@ actor _test_cisco_driver_initialization(t: testing.AsyncT):
 
         after 0: run_test()
 
-    __startup__()
 
 
 actor _test_command_execution_state_flow(t: testing.AsyncT):
@@ -196,7 +194,6 @@ actor _test_command_execution_state_flow(t: testing.AsyncT):
 
         after 0: run_test()
 
-    __startup__()
 
 
 actor _test_configuration_and_commit_flow(t: testing.AsyncT):
@@ -244,7 +241,6 @@ actor _test_configuration_and_commit_flow(t: testing.AsyncT):
 
         after 0: run_test()
 
-    __startup__()
 
 
 actor _test_commit_failure_automatic_rollback(t: testing.AsyncT):
@@ -291,7 +287,6 @@ actor _test_commit_failure_automatic_rollback(t: testing.AsyncT):
 
         after 0: run_test()
 
-    __startup__()
 
 
 actor _test_iosxr_commit_failure_staged_commit_flow(t: testing.AsyncT):
@@ -344,7 +339,6 @@ actor _test_iosxr_commit_failure_staged_commit_flow(t: testing.AsyncT):
 
         after 0: run_test()
 
-    __startup__()
 
 
 actor _test_driver_state_transition_validation(t: testing.AsyncT):
@@ -401,7 +395,6 @@ actor _test_driver_state_transition_validation(t: testing.AsyncT):
 
         after 0: run_test()
 
-    __startup__()
 
 
 actor _test_disconnect_fails_pending_command(t: testing.AsyncT):
@@ -430,5 +423,3 @@ actor _test_disconnect_fails_pending_command(t: testing.AsyncT):
             t.success(result)
 
         after 0: run_test()
-
-    __startup__()

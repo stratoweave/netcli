@@ -75,7 +75,6 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
         )
         after now 2.0: _on_timeout()
 
-    __startup__()
 
 
 actor _test_mock_cli_callback_response(t: testing.EnvT):
@@ -149,7 +148,6 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
         )
         after now 2.0: _on_timeout()
 
-    __startup__()
 
 
 actor _BrokenPipeEndpoint(break_on: str, prompt: bytes):
@@ -251,7 +249,6 @@ actor _test_mock_cli_pipe_error(t: testing.EnvT):
         )
         after now 2.0: _on_timeout()
 
-    __startup__()
 
 
 actor _test_client_requires_connect_cap(t: testing.EnvT):
@@ -272,7 +269,6 @@ actor _test_client_requires_connect_cap(t: testing.EnvT):
             log_handler=t.log_handler
         )
 
-    __startup__()
 
 
 actor _test_client_connect_timeout(t: testing.EnvT):
@@ -298,5 +294,3 @@ actor _test_client_connect_timeout(t: testing.EnvT):
             log_handler=t.log_handler,
             transport_pipe=pipes.client
         )
-
-    __startup__()

@@ -311,7 +311,6 @@ actor IOSXEExample(connect_cap, on_done, username: str, password: str, address: 
 
         start_example()
 
-    __startup__()
 
 
 actor main(env):
@@ -343,5 +342,3 @@ actor main(env):
         except std.argparse.ArgumentError as exc:
             print(exc.error_message, err=True)
             env.exit(1)
-
-    __startup__()

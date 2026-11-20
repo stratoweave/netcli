@@ -216,5 +216,3 @@ actor Client(connect_cap: ?net.TCPConnectCap,
             _pipe.read_cb(_on_pipe_event)
             # The timeout counts from here, not from the baseline of the message that created the client
             after now connect_timeout: _on_connect_timeout()
-
-    __startup__()

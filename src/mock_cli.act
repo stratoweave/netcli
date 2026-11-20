@@ -70,5 +70,3 @@ actor MockCliServer(transport: pipe.Pipe,
 
     proc def __startup__():
         transport.read_cb(_on_pipe_event)
-
-    __startup__()
