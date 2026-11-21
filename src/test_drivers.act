@@ -48,8 +48,8 @@ def _initialize(driver: drivers.Driver, prompt: bytes) -> None:
         driver.handle_data(prompt)
 
 actor _test_juniper_driver_initialization(t: testing.AsyncT):
+    """Test Juniper driver initialization and state transitions"""
     proc def __startup__():
-        """Test Juniper driver initialization and state transitions"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)
@@ -96,8 +96,8 @@ actor _test_juniper_driver_initialization(t: testing.AsyncT):
 
 
 actor _test_cisco_driver_initialization(t: testing.AsyncT):
+    """Test Cisco driver initialization and state transitions"""
     proc def __startup__():
-        """Test Cisco driver initialization and state transitions"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)
@@ -144,8 +144,8 @@ actor _test_cisco_driver_initialization(t: testing.AsyncT):
 
 
 actor _test_command_execution_state_flow(t: testing.AsyncT):
+    """Test command execution state flow: READY -> EXECUTING_COMMAND -> READY"""
     proc def __startup__():
-        """Test command execution state flow: READY -> EXECUTING_COMMAND -> READY"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)
@@ -197,8 +197,8 @@ actor _test_command_execution_state_flow(t: testing.AsyncT):
 
 
 actor _test_configuration_and_commit_flow(t: testing.AsyncT):
+    """Test configuration and commit state flow"""
     proc def __startup__():
-        """Test configuration and commit state flow"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)
@@ -244,8 +244,8 @@ actor _test_configuration_and_commit_flow(t: testing.AsyncT):
 
 
 actor _test_commit_failure_automatic_rollback(t: testing.AsyncT):
+    """Test automatic rollback on commit failure"""
     proc def __startup__():
-        """Test automatic rollback on commit failure"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)
@@ -290,8 +290,8 @@ actor _test_commit_failure_automatic_rollback(t: testing.AsyncT):
 
 
 actor _test_iosxr_commit_failure_staged_commit_flow(t: testing.AsyncT):
+    """Test IOS XR commit failure detection with staged commit commands"""
     proc def __startup__():
-        """Test IOS XR commit failure detection with staged commit commands"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)
@@ -342,8 +342,8 @@ actor _test_iosxr_commit_failure_staged_commit_flow(t: testing.AsyncT):
 
 
 actor _test_driver_state_transition_validation(t: testing.AsyncT):
+    """Test state transition validation logic"""
     proc def __startup__():
-        """Test state transition validation logic"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)
@@ -398,8 +398,8 @@ actor _test_driver_state_transition_validation(t: testing.AsyncT):
 
 
 actor _test_disconnect_fails_pending_command(t: testing.AsyncT):
+    """Test that a disconnect fails the pending command and enters DISCONNECTED"""
     proc def __startup__():
-        """Test that a disconnect fails the pending command and enters DISCONNECTED"""
 
         test_pipe: RecordingPipe = RecordingPipe()
         log: logging.Logger = logging.Logger(t.log_handler)

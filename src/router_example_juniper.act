@@ -158,8 +158,8 @@ actor Example(connect_cap, on_done, username: str, password: str, address: str, 
 
 
 actor main(env):
+    """Main entry point"""
     proc def __startup__():
-        """Main entry point"""
         def done(exit_code: int):
             env.exit(exit_code)
 

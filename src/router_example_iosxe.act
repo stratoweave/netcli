@@ -314,8 +314,8 @@ actor IOSXEExample(connect_cap, on_done, username: str, password: str, address: 
 
 
 actor main(env):
+    """Main entry point for Cisco IOS XE example"""
     proc def __startup__():
-        """Main entry point for Cisco IOS XE example"""
         def done(exit_code: int):
             env.exit(exit_code)
 
