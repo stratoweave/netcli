@@ -13,9 +13,6 @@ actor CiscoExample(connect_cap, on_done, username: str, password: str, address: 
 
     # Create logging handler
     log_handler = logging.Handler("cisco_router_example")
-    log_handler.set_output_level(logging.DEBUG)
-    log_handler.add_sink(logging.StdoutSink())
-
     var client: ?router_client.Client = None
 
     def on_command_result(next):
@@ -153,33 +150,41 @@ actor CiscoExample(connect_cap, on_done, username: str, password: str, address: 
         on_done(0)
 
     # Start the example
-    start_example()
+
+    proc def __startup__():
+        log_handler.set_output_level(logging.DEBUG)
+        log_handler.add_sink(logging.StdoutSink())
+
+        start_example()
+
+
 
 actor main(env):
     """Main entry point for Cisco IOS XR example"""
-    def done(exit_code: int):
-        env.exit(exit_code)
+    proc def __startup__():
+        def done(exit_code: int):
+            env.exit(exit_code)
 
-    def _parse_args():
-        p = std.argparse.Parser()
-        p.add_option("username", "str", default="admin", help="Username for authentication", short="u")
-        p.add_option("password", "str", default="admin", help="Password for authentication", short="p")
-        p.add_option("address", "str", default="localhost", help="Router IP address or hostname", short="a")
-        p.add_option("port", "int", default=22, help="SSH port number", short="P")
-        return p.parse(env.argv)
+        def _parse_args():
+            p = std.argparse.Parser()
+            p.add_option("username", "str", default="admin", help="Username for authentication", short="u")
+            p.add_option("password", "str", default="admin", help="Password for authentication", short="p")
+            p.add_option("address", "str", default="localhost", help="Router IP address or hostname", short="a")
+            p.add_option("port", "int", default=22, help="SSH port number", short="P")
+            return p.parse(env.argv)
 
-    try:
-        args = _parse_args()
+        try:
+            args = _parse_args()
 
-        username = args.get_str("username")
-        password = args.get_str("password")
-        address = args.get_str("address")
-        port = args.get_int("port")
+            username = args.get_str("username")
+            password = args.get_str("password")
+            address = args.get_str("address")
+            port = args.get_int("port")
 
-        CiscoExample(net.TCPConnectCap(net.TCPCap(net.NetCap(env.cap))), done, username, password, address, port)
-    except std.argparse.PrintUsage as exc:
-        print(exc.error_message)
-        env.exit(0)
-    except std.argparse.ArgumentError as exc:
-        print(exc.error_message, err=True)
-        env.exit(1)
+            CiscoExample(net.TCPConnectCap(net.TCPCap(net.NetCap(env.cap))), done, username, password, address, port)
+        except std.argparse.PrintUsage as exc:
+            print(exc.error_message)
+            env.exit(0)
+        except std.argparse.ArgumentError as exc:
+            print(exc.error_message, err=True)
+            env.exit(1)

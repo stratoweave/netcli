@@ -68,4 +68,5 @@ actor MockCliServer(transport: pipe.Pipe,
         _log.debug("Mock CLI pipe connected")
         send_prompt()
 
-    transport.read_cb(_on_pipe_event)
+    proc def __startup__():
+        transport.read_cb(_on_pipe_event)

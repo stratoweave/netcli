@@ -50,7 +50,6 @@ actor Client(connect_cap: ?net.TCPConnectCap,
     """
 
     _log = logging.Logger(log_handler)
-    _log.info("Initializing router client", {"address": address, "protocol_": protocol_})
 
     var _pipe: ?pipe.Pipe = transport_pipe
     var _driver: ?drivers.Driver = None
@@ -189,40 +188,31 @@ actor Client(connect_cap: ?net.TCPConnectCap,
         else:
             return None
 
-    # Validate protocol
-    if transport_pipe is None and protocol_ != "ssh":
-        _log.error("Unsupported protocol", {"protocol_": protocol_})
-        # For now, only SSH is supported
-        raise ValueError("Unsupported protocol: " + protocol_)
+    actual_port = port if transport_pipe is not None or protocol_ == "ssh" else raise ValueError("Unsupported protocol: " + protocol_)
 
-    # Adjust port if default
-    actual_port = port
-    if port == 22 and protocol_ == "ssh":
-        actual_port = 22
-    elif port == 23 and protocol_ == "telnet":
-        actual_port = 23
-
-    # Initialize connection
-    if transport_pipe is None:
-        cap = connect_cap
-        if cap is not None:
-            _log.debug("Starting SSH connection", {"address": address, "port": actual_port})
-            # The device CLI needs an interactive shell with a PTY
-            _pipe = sshpipe.SshPipe(
-                cap,
-                address=address,
-                port=actual_port,
-                username=username,
-                password=password,
-                private_keys=private_keys,
-                shell=True,
-                host_key_check=sshpipe.HOST_KEY_CHECK_NONE if skip_host_key_check else sshpipe.HOST_KEY_CHECK_ACCEPT_NEW,
-                connect_timeout=connect_timeout,
-                log_handler=log_handler
-            )
-        else:
-            on_connect(self, ValueError("TCP connect capability is required for SSH transport"))
-    if _pipe is not None:
-        _pipe.read_cb(_on_pipe_event)
-        # The timeout counts from here, not from the baseline of the message that created the client
-        after now connect_timeout: _on_connect_timeout()
+    proc def __startup__():
+        _log.info("Initializing router client", {"address": address, "protocol_": protocol_})
+        # Initialize connection
+        if transport_pipe is None:
+            cap = connect_cap
+            if cap is not None:
+                _log.debug("Starting SSH connection", {"address": address, "port": actual_port})
+                # The device CLI needs an interactive shell with a PTY
+                _pipe = sshpipe.SshPipe(
+                    cap,
+                    address=address,
+                    port=actual_port,
+                    username=username,
+                    password=password,
+                    private_keys=private_keys,
+                    shell=True,
+                    host_key_check=sshpipe.HOST_KEY_CHECK_NONE if skip_host_key_check else sshpipe.HOST_KEY_CHECK_ACCEPT_NEW,
+                    connect_timeout=connect_timeout,
+                    log_handler=log_handler
+                )
+            else:
+                on_connect(self, ValueError("TCP connect capability is required for SSH transport"))
+        if _pipe is not None:
+            _pipe.read_cb(_on_pipe_event)
+            # The timeout counts from here, not from the baseline of the message that created the client
+            after now connect_timeout: _on_connect_timeout()
