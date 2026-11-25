@@ -33,9 +33,9 @@ class Driver(object):
     pipe: Pipe
     log: logging.Logger
     initialize: proc() -> None
-    is_ready: proc() -> bool
-    get_state: proc() -> str
-    is_valid_transition: proc(from_state: str, to_state: str) -> bool
+    is_ready: () -> bool
+    get_state: () -> str
+    is_valid_transition: (from_state: str, to_state: str) -> bool
     handle_data: proc(data: bytes) -> None
     handle_disconnect: proc(error: Exception) -> None
     execute_command: proc(cb: action(err: ?Exception, response: ?str) -> None, command: str) -> None
@@ -44,7 +44,7 @@ class Driver(object):
     def configure_and_commit(self, cb: action(err: ?Exception, session_log: str) -> None, config: list[str], skip_pre_config: bool=False) -> None:
         raise NotImplementedError()
     rollback_configuration: proc(cb: action(err: ?Exception, session_log: str) -> None, commits_back: int) -> None
-    get_device_info: proc() -> dict[str, str]
+    get_device_info: () -> dict[str, str]
 
 class BaseDriver(Driver):
     """Base driver implementation with common functionality"""
@@ -60,7 +60,7 @@ class BaseDriver(Driver):
     _rollback_commits: int
     _init_commands: list[str]
 
-    def __init__(self, device_type: str, pipe: Pipe, log: logging.Logger):
+    pure def __init__(self, device_type: str, pipe: Pipe, log: logging.Logger):
         self.device_type = device_type
         self.pipe = pipe
         self.log = log
@@ -450,7 +450,7 @@ def auto_detect() -> str:
     # that analyzes the SSH banner, initial prompts, etc.
     return DEVICE_TYPE_UNKNOWN
 
-def create_driver(device_type: str, pipe: Pipe, log: logging.Logger) -> ?Driver:
+com def create_driver(device_type: str, pipe: Pipe, log: logging.Logger) -> ?Driver:
     """
     Create appropriate driver instance based on device type
 
@@ -609,7 +609,7 @@ class CiscoIOSXEDriver(BaseDriver):
 
     _archive_checkpoint_stack: list[str]  # Stack of archive checkpoints for rollback
 
-    def __init__(self, device_type: str, pipe: Pipe, log: logging.Logger):
+    pure def __init__(self, device_type: str, pipe: Pipe, log: logging.Logger):
         BaseDriver.__init__(self, device_type, pipe, log)
         self._archive_checkpoint_stack = []
 

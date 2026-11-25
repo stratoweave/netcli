@@ -53,7 +53,7 @@ actor _test_mock_cli_canned_response(t: testing.EnvT):
     def _on_timeout():
         _fail_once(ValueError("Timed out waiting for mock CLI canned response"))
 
-    proc def __startup__():
+    def __startup__():
         pipe.connect_actor_pipe_pair(pipes)
         mock_cli.MockCliServer(
             transport=pipes.server,
@@ -128,7 +128,7 @@ actor _test_mock_cli_callback_response(t: testing.EnvT):
     def _on_timeout():
         _fail_once(ValueError("Timed out waiting for mock CLI callback response"))
 
-    proc def __startup__():
+    def __startup__():
         pipe.connect_actor_pipe_pair(pipes)
         mock_cli.MockCliServer(
             transport=pipes.server,
@@ -237,7 +237,7 @@ actor _test_mock_cli_pipe_error(t: testing.EnvT):
     def _on_timeout():
         _fail_once(ValueError("Timed out waiting for the pipe error"))
 
-    proc def __startup__():
+    def __startup__():
         router_client.Client(
             connect_cap=None,
             address="broken-pipe",
@@ -259,7 +259,7 @@ actor _test_client_requires_connect_cap(t: testing.EnvT):
         else:
             t.failure(ValueError("Expected missing connect capability error, got: " + str(err)))
 
-    proc def __startup__():
+    def __startup__():
         router_client.Client(
             connect_cap=None,
             address="localhost",
@@ -282,7 +282,7 @@ actor _test_client_connect_timeout(t: testing.EnvT):
         else:
             t.failure(ValueError("Expected a timeout, got: " + str(err)))
 
-    proc def __startup__():
+    def __startup__():
         pipe.connect_actor_pipe_pair(pipes)
         router_client.Client(
             connect_cap=None,
