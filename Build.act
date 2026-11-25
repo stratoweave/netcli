@@ -3,13 +3,13 @@ fingerprint = 0x81048851dcb0ac83
 dependencies = {
     "pipe": (
         repo_url="https://github.com/actonlang/pipe.git",
-        url="https://github.com/actonlang/pipe/archive/1dac72c6ddb04223104384e66e5d9d50ca4d6775.zip",
-        hash="N-V-__8AAOofAAAgtxxyXyew3QQ5rb3g0F-wJAFbLR3oDTJG"
+        url="https://github.com/actonlang/pipe/archive/e7b13da3f236d7ae3f2eeed3742d976ac1af5d54.zip",
+        hash="N-V-__8AAOAfAABBHQIJn_YVo0Ihm8HLF3rgYPoijzoqyZd9"
     ),
     "ssh": (
         repo_url="https://github.com/actonlang/acton-ssh",
-        url="https://github.com/actonlang/acton-ssh/archive/608fc5800235367e82edd7e509ceabef26492e6f.zip",
-        hash="N-V-__8AALyyBwARTu-h_AXglN8o_qfOYK360RyW2lby1cdD"
+        url="https://github.com/actonlang/acton-ssh/archive/047bfe4a8aee63a93a92fb71f05010131ad2f862.zip",
+        hash="N-V-__8AAHGxBwCLyFbGBDlUxXYZ4MKnqRTY_87V6chHyGBD"
     )
 }
 zig_dependencies = {}

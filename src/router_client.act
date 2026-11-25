@@ -190,7 +190,7 @@ actor Client(connect_cap: ?net.TCPConnectCap,
 
     actual_port = port if transport_pipe is not None or protocol_ == "ssh" else raise ValueError("Unsupported protocol: " + protocol_)
 
-    proc def __startup__():
+    def __startup__():
         _log.info("Initializing router client", {"address": address, "protocol_": protocol_})
         # Initialize connection
         if transport_pipe is None:
